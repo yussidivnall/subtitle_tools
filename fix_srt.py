@@ -4,6 +4,11 @@ import argparse
 import csv
 import Levenshtein
 
+# A Levenshtein similarity score, 
+# two strings below this distance
+# are considered "similar"
+SIMILARITY_CUTOFF = 0.12
+
 def load_srt(input_srt):
     subtitles = []
 
@@ -59,13 +64,22 @@ def is_garbage(text):
         return True
     return False
 
+def normalized_levenshtein_distance(str1, str2):
+    len_max = max(len(str1), len(str2))
+    if len_max == 0:
+        return 0  # Both strings are empty, consider them similar
+    else:
+        distance = Levenshtein.distance(str1, str2)
+        ret = distance / len_max
+        print(f'"{str1}" =~ "{str2}" by {ret}')
+        return ret
+
+
 def is_similar(prev_text, current_text):
-    print(f' {prev_text} ~= {current_text}')
-    # Calculate Levenshtein distance
-    distance = Levenshtein.distance(prev_text, current_text)
-    # Set a threshold based on your requirements
-    similarity_threshold = 5  # Adjust as needed
-    return distance <= similarity_threshold
+    if normalized_levenshtein_distance(prev_text,current_text) <= SIMILARITY_CUTOFF:
+        print("Similar")
+        return True
+    return False
 
 def edit_actions(actions_file):
     # Open the CSV file in the user's preferred text editor
@@ -117,8 +131,10 @@ def apply_actions(actions_file, output_srt):
 
 def main():
     parser = argparse.ArgumentParser(description='Load and process SRT files.')
-    parser.add_argument('input_srt_file', help='Path to the input SRT file')
+    parser.add_argument('--input_srt_file', help='Path to the input SRT file')
     parser.add_argument('--output_srt_file', help='Path to the output SRT file (optional)')
+    parser.add_argument("--similarity-threshold", default=SIMILARITY_CUTOFF, type=float, help="A Levenshtien distance score, normalised by subtitle lengths")
+    parser.add_argument("--delete", nargs="+", type=str, help="A regular expressions to delete, subtitles matching this will be removed")
 
     args = parser.parse_args()
 
@@ -137,9 +153,9 @@ def main():
         if prev_subtitle and is_similar(prev_subtitle['text'],subtitle['text']):
             subtitle['action'] = 'merge'
         prev_subtitle = subtitle
-        print(f"Start Time: {subtitle['start-time']}, End Time: {subtitle['end-time']}")
-        print(f"Text: {subtitle['text']}, Action: {subtitle['action']}")
-        print()
+        #print(f"Start Time: {subtitle['start-time']}, End Time: {subtitle['end-time']}")
+        #print(f"Text: {subtitle['text']}, Action: {subtitle['action']}")
+        #print()
 
     save_actions(subtitles=subtitles, output_csv="actions.csv")
     edit_actions("actions.csv")

@@ -1,11 +1,8 @@
 #!/bin/bash
+import re
 import cv2
 import pytesseract
-from googletrans import Translator
 from PIL import Image
-import subprocess
-import re
-import enchant
 
 # Set the path to the Tesseract executable (update it based on your installation)
 pytesseract.pytesseract.tesseract_cmd = r'/usr/bin/tesseract'
@@ -16,7 +13,7 @@ def extract_text(image):
     _, img = cv2.threshold(image, 128, 255, cv2.THRESH_BINARY)
 
     # OCR using Tesseract
-    text = pytesseract.image_to_string(Image.fromarray(img), lang='heb')
+    text = pytesseract.image_to_string(Image.fromarray(img), lang='heb', config='--psm 11' )
 
     # Post-process text (customize as needed)
     text = re.sub(r'[^A-Za-z0-9א-ת\s\.,!?-]', '', text)
@@ -27,7 +24,7 @@ def format_time(milliseconds):
     seconds, milliseconds = divmod(milliseconds, 1000)
     minutes, seconds = divmod(seconds, 60)
     hours, minutes = divmod(minutes, 60)
-    return f"{int(hours):02d}:{int(minutes):02d}:{int(seconds):02d},{milliseconds:03d}"
+    return f"{int(hours):02d}:{int(minutes):02d}:{int(seconds):02d},{milliseconds}"
 
 # Function to process video and generate SRT file
 def process_video(video_path, output_srt):
@@ -60,7 +57,8 @@ def process_video(video_path, output_srt):
             ret, frame = cap.read()
             # Define region of interest for cropping
             roi = frame[screen_height-140:screen_height-90, 0:frame.shape[1]]
-            _, roi_thresh = cv2.threshold(cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY), 200, 255, cv2.THRESH_BINARY_INV)
+            # _, roi_thresh = cv2.threshold(cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY), 200, 255, cv2.THRESH_BINARY_INV)
+            _, roi_thresh = cv2.threshold(cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY), 245, 255, cv2.THRESH_BINARY_INV)
 
 
             # Extract text from the region
@@ -105,3 +103,5 @@ video_path = '/home/uri/tmp/videos/Madrasa/Madrasa-S01E01-New-Begining.mp4'
 output_srt = 'output.srt'
 process_video(video_path, output_srt)
 
+if __name__ == "__main__":
+    pass
