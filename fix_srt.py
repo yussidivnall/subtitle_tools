@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 import argparse
 import csv
@@ -58,8 +59,12 @@ def save_actions(subtitles, output_csv):
 
 
 
-def is_garbage(text):
+def is_garbage(text, delete_list):
     # Add your criteria for identifying garbage text
+    if delete_list:
+        for d in delete_list:
+            if (d.search(text)):
+                return True
     if len(text) < 3 or text.isdigit() or text.strip() == "1":
         return True
     return False
@@ -75,8 +80,8 @@ def normalized_levenshtein_distance(str1, str2):
         return ret
 
 
-def is_similar(prev_text, current_text):
-    if normalized_levenshtein_distance(prev_text,current_text) <= SIMILARITY_CUTOFF:
+def is_similar(prev_text, current_text, cutoff = SIMILARITY_CUTOFF):
+    if normalized_levenshtein_distance(prev_text,current_text) <= cutoff:
         print("Similar")
         return True
     return False
@@ -127,37 +132,40 @@ def apply_actions(actions_file, output_srt):
     with open(output_srt, 'w', encoding='utf-8') as srt_file:
         srt_file.writelines(srt_content)
 
-
-
 def main():
-    parser = argparse.ArgumentParser(description='Load and process SRT files.')
+    parser = argparse.ArgumentParser(description='Load and process SRT files.\n ')
     parser.add_argument('--input_srt_file', help='Path to the input SRT file')
     parser.add_argument('--output_srt_file', help='Path to the output SRT file (optional)')
-    parser.add_argument("--similarity-threshold", default=SIMILARITY_CUTOFF, type=float, help="A Levenshtien distance score, normalised by subtitle lengths")
+    parser.add_argument("--threshold", default=SIMILARITY_CUTOFF, type=float, help="A Levenshtien distance score, normalised by subtitle lengths, used for merging")
     parser.add_argument("--delete", nargs="+", type=str, help="A regular expressions to delete, subtitles matching this will be removed")
 
     args = parser.parse_args()
 
     input_srt = args.input_srt_file
     output_srt = args.output_srt_file
+    del_list = args.delete
+    similarity = args.threshold
+
+    if del_list is None:
+        delete_list = []
+    else:
+        delete_list = [ re.compile(r) for r in del_list ]
 
     subtitles = load_srt(input_srt)
 
     prev_subtitle = None
     for i, subtitle in enumerate(subtitles):
-        if is_garbage(subtitle['text']):
-            print(f"Garbage text detected! Action: delete")
-            # Decide on an action, e.g., 'delete' or 'do nothing'
+        # Decide on an action, `merge`, 'delete' or 'do nothing'
+        if is_garbage(subtitle['text'], delete_list):
+            print(f"Garbage text detected! Action: {subtitle}")
             subtitle['action'] = 'delete'
             continue
-        if prev_subtitle and is_similar(prev_subtitle['text'],subtitle['text']):
+        if prev_subtitle and is_similar(prev_subtitle['text'],subtitle['text'], similarity):
             subtitle['action'] = 'merge'
         prev_subtitle = subtitle
-        #print(f"Start Time: {subtitle['start-time']}, End Time: {subtitle['end-time']}")
-        #print(f"Text: {subtitle['text']}, Action: {subtitle['action']}")
-        #print()
 
     save_actions(subtitles=subtitles, output_csv="actions.csv")
+    input("Please review the proposed changes and ammend as required")
     edit_actions("actions.csv")
 
     if output_srt:
