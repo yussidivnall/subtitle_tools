@@ -1,5 +1,6 @@
 import os
 import re
+import logging
 import subprocess
 import argparse
 import csv
@@ -8,9 +9,9 @@ import Levenshtein
 # A Levenshtein similarity score, 
 # two strings below this distance
 # are considered "similar"
-SIMILARITY_CUTOFF = 0.12
+SIMILARITY_CUTOFF = 0.2
 
-def load_srt(input_srt):
+def load_srt(input_srt) -> list:
     subtitles = []
 
     with open(input_srt, 'r', encoding='utf-8') as srt_file:
@@ -76,13 +77,13 @@ def normalized_levenshtein_distance(str1, str2):
     else:
         distance = Levenshtein.distance(str1, str2)
         ret = distance / len_max
-        print(f'"{str1}" =~ "{str2}" by {ret}')
+        logging.debug(f"\"{str1}\" is similar to \"{str2}\" by {ret}")
         return ret
 
 
 def is_similar(prev_text, current_text, cutoff = SIMILARITY_CUTOFF):
     if normalized_levenshtein_distance(prev_text,current_text) <= cutoff:
-        print("Similar")
+        logging.debug(f"merge {current_text}")
         return True
     return False
 
@@ -134,43 +135,63 @@ def apply_actions(actions_file, output_srt):
 
 def main():
     parser = argparse.ArgumentParser(description='Load and process SRT files.\n ')
-    parser.add_argument('--input_srt_file', help='Path to the input SRT file')
-    parser.add_argument('--output_srt_file', help='Path to the output SRT file (optional)')
+    parser.add_argument("srt_file")
+    parser.add_argument('--output_srt_file', help='Path to the output SRT file, defaults to overwrite input srt')
     parser.add_argument("--threshold", default=SIMILARITY_CUTOFF, type=float, help="A Levenshtien distance score, normalised by subtitle lengths, used for merging")
-    parser.add_argument("--delete", nargs="+", type=str, help="A regular expressions to delete, subtitles matching this will be removed")
+    parser.add_argument("--delete", nargs="+", type=str, help="Regular expressions to delete, subtitles matching this will be removed")
+    parser.add_argument("--confirm", action='store_true', help="Don't open editor just apply actions")
+    parser.add_argument("--apply-actions-csv", "-a", type=str, help = "apply an existing actions csv and exit")
+    parser.add_argument("--dont-apply", action='store_true', help="Don't apply, only generate actionable CSV file")
 
     args = parser.parse_args()
-
-    input_srt = args.input_srt_file
+    srt_file = args.srt_file
     output_srt = args.output_srt_file
     del_list = args.delete
     similarity = args.threshold
+    confirm = args.confirm
+    apply_actions_csv = args.apply_actions_csv
+    dont_apply = args.dont_apply
+
+    if not output_srt:
+        output_srt = srt_file
+
+    if apply_actions_csv:
+        # Apply actionable list csv, no need to generate one
+        apply_actions(apply_actions_csv, output_srt)
+        exit(0)
+
+    action_csv_file = output_srt+".actions.csv"
 
     if del_list is None:
         delete_list = []
     else:
         delete_list = [ re.compile(r) for r in del_list ]
 
-    subtitles = load_srt(input_srt)
+    subtitles = load_srt(srt_file)
 
     prev_subtitle = None
     for i, subtitle in enumerate(subtitles):
         # Decide on an action, `merge`, 'delete' or 'do nothing'
         if is_garbage(subtitle['text'], delete_list):
-            print(f"Garbage text detected! Action: {subtitle}")
+            logging.debug(f'delete: {subtitle["text"]}')
             subtitle['action'] = 'delete'
             continue
         if prev_subtitle and is_similar(prev_subtitle['text'],subtitle['text'], similarity):
             subtitle['action'] = 'merge'
+
         prev_subtitle = subtitle
 
-    save_actions(subtitles=subtitles, output_csv="actions.csv")
-    input("Please review the proposed changes and ammend as required")
-    edit_actions("actions.csv")
+    save_actions(subtitles=subtitles, output_csv=action_csv_file)
+    if not confirm:
+        choice = input("Created actionable list [A]pply, [i]nspect.")
+        if choice == 'i':
+            edit_actions(action_csv_file)
 
-    if output_srt:
-        apply_actions("actions.csv", output_srt)
+    # Save srt file
+    if not dont_apply:
+        apply_actions(action_csv_file, output_srt)
+        logging.info(f"{output_srt} written")
 
 if __name__ == "__main__":
+    logging.basicConfig(level = logging.DEBUG)
     main()
-

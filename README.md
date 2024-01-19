@@ -24,4 +24,6 @@ Actions can include "do nothing", "delete" and "merge"
 The list is then displayed to the user for inspection and modification and a new .srt subtitles file is produced.
 The user can then change the action or fix the subtitle text. note that to "delete" you can either set the action (third column) to "delete" or simply delete the line from the acitonable list. "merge" will merge to the last "do nothing" entry so you can just fix that one if it is incorrect.
 
-You might need to perform this multiple times, perhaps with different Levenshtein values.
+You might need to perform this multiple times, perhaps with different Levenshtein values or delete list
+
+Usage: `python fix_srt <--input-srt INPUT SRT FILE> [--output_srt <FILE>] [--threshold N] [--delete regex regex ....] 
