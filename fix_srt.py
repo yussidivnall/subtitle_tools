@@ -1,5 +1,6 @@
 #!/bin/python
 """ Attempts to fix a polluted srt subtitle file """
+import io
 import os
 import sys
 import re
@@ -13,7 +14,12 @@ from fuzzywuzzy import fuzz
 # A Levenshtein similarity score,
 # two strings below this distance
 # are considered "similar"
-SIMILARITY_CUTOFF = 0.4
+SIMILARITY_CUTOFF = 0.5
+
+config = {
+    "delete_list": [],
+    "threshold": 0.5
+}
 
 
 def clean_text(text: str) -> str:
@@ -70,6 +76,14 @@ def load_srt(input_srt: str) -> list:
     return subtitles
 
 
+def csv_safe(string: str) -> str:
+    """ Format string to be a safe CSV text"""
+    outstream = io.StringIO()   # "fake" output file
+    cw = csv.writer(outstream)  # pass the fake file to csv module
+    cw.writerow([string])       # write a row
+    return outstream.getvalue()  # get the contents of the fake file
+
+
 def save_actions(subtitles, output_csv):
     """ Save proposed actions to a CSV to be used to generate a new .srt file """
     # Create a list to store rows for the CSV file
@@ -77,12 +91,17 @@ def save_actions(subtitles, output_csv):
 
     # Populate the list with subtitle information
     for subtitle in subtitles:
-        csv_rows.append([subtitle['start-time'], subtitle['end-time'],
-                        subtitle['action'], subtitle['text']])
+        # Escape CSV delimiter in text
+        start_time = subtitle['start-time']
+        end_time = subtitle['end-time']
+        action = subtitle['action']
+        text = subtitle['text']
+        entry = [start_time, end_time, action, text]
+        csv_rows.append(entry)
 
     # Save the list to a CSV file
     with open(output_csv, 'w', newline='', encoding='utf-8') as csv_file:
-        csv_writer = csv.writer(csv_file)
+        csv_writer = csv.writer(csv_file, delimiter=',')
         csv_writer.writerows(csv_rows)
 
 
@@ -180,18 +199,16 @@ def apply_actions(actions_csv_file: str, output_srt_file: str):
     current_subtitle = {'start-time': '', 'end-time': '', 'text': ''}
 
     for action in actions:
+        print("action: ", action)
         if action['action'] == 'delete':
             # Skip this entry if action is 'delete'
             continue
-
-        if action['action'] == 'merge':
+        elif action['action'] == 'merge':
             # Set the end time of the last subtitle to be the current subtitle's end time
-            current_subtitle['end-time'] = action['end_time']
-        if action['action'] == 'merge to':
-            current_subtitle['end-time'] = action['end_time']
-            current_subtitle['text'] = action['text']
-
+            # current_subtitle['end-time'] = action['end_time']
+            continue
         else:
+            # On 'do nothing' and 'merge to'
             # Save the current subtitle to the SRT content list
             if current_subtitle['start-time'] != '':
                 srt_content.append(get_srt_entry(
@@ -269,7 +286,7 @@ def main():
     parser.add_argument("srt_file")
     parser.add_argument(
         '--output_srt_file', help='Path to the output SRT file, defaults to overwrite input srt')
-    parser.add_argument("--threshold", default=SIMILARITY_CUTOFF, type=float,
+    parser.add_argument("--threshold", default=config["threshold"], type=float,
                         help="A Levenshtien distance score, normalised by subtitle lengths, used for merging")
     parser.add_argument("--delete", nargs="+", type=str,
                         help="Regular expressions to delete, subtitles matching this will be removed")
@@ -282,34 +299,41 @@ def main():
 
     args = parser.parse_args()
     srt_file = args.srt_file
-    output_srt = args.output_srt_file
-    confirm = args.confirm
+    output_srt_file = args.output_srt_file
     apply_actions_csv = args.apply_actions_csv
     dont_apply = args.dont_apply
 
-    if not output_srt:
-        output_srt = srt_file
+    if not output_srt_file:
+        output_srt_file = srt_file
 
     if apply_actions_csv:
         # Apply actionable list csv, no need to generate one
-        apply_actions(apply_actions_csv, output_srt)
+        apply_actions(apply_actions_csv, output_srt_file)
         sys.exit(0)
 
-    action_csv_file = output_srt+".actions.csv"
-
+    action_csv_file = output_srt_file+".actions.csv"
     subtitles = load_srt(srt_file)
-
-    subtitles = process_subtitles(subtitles, args.delete, args.threshold)
+    subtitles = process_subtitles(
+        subtitles,
+        delete_list=args.delete,
+        similarity=args.threshold)
     save_actions(subtitles=subtitles, output_csv=action_csv_file)
-    if not confirm:
-        choice = input("Created actionable list [A]pply, [i]nspect.")
+    if not args.confirm:
+        choice = input("Created actionable list [C]confirm, [i]nspect.")
         if choice == 'i':
             edit_actions(action_csv_file)
+            save = input("Apply changes? [Y]es, [n]o")
+            if save == 'n':
+                dont_apply = True
+                logging.info("Not saving %s, actions written to %s",
+                             output_srt_file, action_csv_file)
+                logging.info("To apply action file use `python ./extract.py --apply-actions-csv %s %s",
+                             action_csv_file, output_srt_file)
 
     # Save srt file
     if not dont_apply:
-        apply_actions(action_csv_file, output_srt)
-        logging.info("%s written", output_srt)
+        apply_actions(action_csv_file, output_srt_file)
+        logging.info("%s written", output_srt_file)
 
 
 if __name__ == "__main__":
