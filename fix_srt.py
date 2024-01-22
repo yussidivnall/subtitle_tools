@@ -10,6 +10,7 @@ import argparse
 import csv
 import Levenshtein
 from fuzzywuzzy import fuzz
+import argcomplete
 
 # A Levenshtein similarity score,
 # two strings below this distance
@@ -279,8 +280,8 @@ def process_subtitles(subtitle_action_list: list, delete_list: list, similarity:
     return ret
 
 
-def main():
-    """ Main, no a lot more to say but pylint insists i say something """
+def parse_args():
+    """ Parse Command line arguments """
     parser = argparse.ArgumentParser(
         description='Load and process SRT files.\n ')
     parser.add_argument("srt_file")
@@ -296,8 +297,15 @@ def main():
                         help="apply an existing actions csv and exit")
     parser.add_argument("--dont-apply", action='store_true',
                         help="Don't apply, only generate actionable CSV file")
-
+    argcomplete.autocomplete(parser)
     args = parser.parse_args()
+    return args
+
+
+def main():
+    """ Main, no a lot more to say but pylint insists i say something """
+
+    args = parse_args()
     srt_file = args.srt_file
     output_srt_file = args.output_srt_file
     apply_actions_csv = args.apply_actions_csv
